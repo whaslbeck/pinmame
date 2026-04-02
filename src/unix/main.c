@@ -73,7 +73,21 @@ int main(int argc, char **argv)
 #endif
 
 
+	/* parse configuration file and environment */
+	if ((res = config_init(argc, argv)) != 1234)
+		return res;
+
+#ifdef REMOTE_DEBUG
+	if (pmoptions.headless) {
+		options.skip_disclaimer = 1;
+		options.skip_gameinfo = 1;
+	}
+#endif
+
 	/* some display methods need to do some stuff with root rights */
+#ifdef REMOTE_DEBUG
+	if (!pmoptions.headless) {
+#endif
 	res2 = sysdep_init();
 
 	/* to be absolutely safe force giving up root rights here in case
@@ -84,20 +98,35 @@ int main(int argc, char **argv)
 		sysdep_close();
 		return OSD_NOT_OK;
 	}
+#ifdef REMOTE_DEBUG
+	} else {
+		res2 = OSD_OK;
+	}
+#endif
 
-	/* Set the title, now auto build from defines from the makefile */
-	snprintf(title, sizeof(title), "%s (%s) version %s", NAME, DISPLAY_METHOD, build_version);
-
-	/* parse configuration file and environment */
-	if ((res = config_init(argc, argv)) != 1234 || res2 == OSD_NOT_OK)
+	if (res2 == OSD_NOT_OK)
 		goto leave;
+/* Set the title, now auto build from defines from the makefile */
+#ifdef REMOTE_DEBUG
+if (pmoptions.headless)
+	snprintf(title, sizeof(title), "%s (HEADLESS) version %s", NAME, build_version);
+else
+#endif
+snprintf(title, sizeof(title), "%s (%s) version %s", NAME, DISPLAY_METHOD, build_version);
 
-	/* Check the colordepth we're requesting */
-	if (!options.color_depth && !sysdep_display_16bpp_capable())
-		options.color_depth = 8;
+/* Check the colordepth we're requesting */
+#ifdef REMOTE_DEBUG
+if (!pmoptions.headless) {
+#endif
+if (!options.color_depth && !sysdep_display_16bpp_capable())
+	options.color_depth = 8;
+#ifdef REMOTE_DEBUG
+}
+#endif
 
-	/* 
-	 * Initialize whatever is needed before the display is actually 
+/* 
+ * finish parsing configuration file and environment which needs to be
+...
 	 * opened, e.g., artwork setup.
 	 */
 	osd_video_initpre();

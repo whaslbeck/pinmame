@@ -76,6 +76,16 @@ TARGET = pinmame
 # this will also select 'vid_lisy' as DISPLAY_METHOD
 # LISY_X_FAKE_VIDEO = 1
 
+# uncomment next line to include Remote Debugging support
+REMOTE_DEBUG = 1
+
+# uncomment next line to enable debug symbols
+DEBUG = 1
+
+ifdef DEBUG
+CFLAGS += -g
+endif
+
 ###########################################################################
 # Development environment options 
 ###########################################################################
@@ -131,7 +141,11 @@ CPPFLAGS += -std=gnu++11
 # this section.
 ###########################################################################
 
+ifdef DEBUG
+CFLAGS = -g -Wall -Wno-unused
+else
 CFLAGS = -fomit-frame-pointer -Wall -Wno-unused
+endif
 
 # gcc on x86 with some optimizations
 # CFLAGS = -O2 -Wall -Wno-unused -mcpu=i686 -fomit-frame-pointer \
@@ -210,7 +224,9 @@ ifneq (,$(findstring gcc,$(CC)))
   # Optimization level -- choose one of these.
   # Use -O1 if you suspect that -O2 is producing bad code; use -O3 for a 
   # possible speedup; use -Os for a smaller executable.
+ifndef DEBUG
 CFLAGS += -O2
+endif
   # CFLAGS += -O1
   # CFLAGS += -O3
   # CFLAGS += -Os
@@ -372,7 +388,11 @@ IL	= '-DINLINE=static __inline__'
 
 # Normal linking.
 #LD	= $(CC) -Wl,-s
+ifdef DEBUG
+LD	= g++
+else
 LD	= g++ -Wl,-s
+endif
 
 # For the Intel C++ Compiler -- expect large link time due to -ipo 
 # optimization.
@@ -784,9 +804,13 @@ ifdef LISY_X_FAKE_VIDEO
 CFLAGS += -DLISY_VIDEO
 endif
 
-
 ###########################################################################
 # All done.  Type make -f makefile.unix and enjoy xmame/xmess.  ;)
 # No configurable options below this line.
 ###########################################################################
+
+ifdef REMOTE_DEBUG
+CFLAGS += -DREMOTE_DEBUG
+endif
+
 include src/unix/unix.mak

@@ -155,3 +155,38 @@ For more information, please refer to [simulation.txt](release/simulation.txt) f
 # Note from the PinMAME Development team
 
 We're working hard to improve this great emulator, and welcome your feedback!! Please do not hesitate to contact us with questions, bug reports, suggestions, code patches, whatever!
+
+## Remote Debugger & Headless Mode
+
+This version of PinMAME includes a powerful **Remote Debugger** extension designed for deep hardware reversing and headless operation (e.g., in Docker or CI environments).
+
+### Key Features
+- **Headless Execution**: Run PinMAME without X11/SDL windows using the `-headless` flag.
+- **REST API**: Control every aspect of the emulator via a thread-safe HTTP interface.
+- **Web Dashboard**: Modern, low-latency UI for live DMD rendering, memory editing, and disassembling.
+- **WPC Specialization**: Real-time visualization of Lamp, Switch, and Solenoid matrices, including WPC ROM banking.
+- **Classic CLI**: Support for MAME-style debugger commands (`BP`, `WP`, `G`, `S`, etc.) via the web console.
+
+### Building
+To build with the Remote Debugger extension:
+```bash
+make -f makefile.unix REMOTE_DEBUG=1
+```
+
+### Usage
+Start PinMAME in headless mode with the debugger active:
+```bash
+./xpinmamed.x11 -headless -startpaused -httpport 8935 taf_l7
+```
+- `-headless`: Disables video/input windows.
+- `-startpaused`: Halts the CPU at the first instruction.
+- `-httpport <port>`: Sets the API/UI port (default: 8935).
+
+### HTTP API & UI
+- **Dashboard**: `http://localhost:8935/ui`
+- **API Documentation**: `http://localhost:8935/api/doc`
+- **Example API Calls**:
+  - `GET /api/info`: Get game status and hardware matrices.
+  - `GET /api/debugger/command?cmd=bp 0x8CC1`: Set a breakpoint.
+  - `GET /api/debugger/memory?addr=0x0000&size=256`: Read memory.
+  - `GET /api/dmd`: Get raw grayscale DMD frames.

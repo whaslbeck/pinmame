@@ -124,6 +124,7 @@ PROC_OBJ = $(NAME).obj/p-roc
 LISY_OBJ = $(NAME).obj/lisy
 
 CORE_OBJDIRS = $(OBJ) $(VGM_OBJ) \
+	$(OBJ)/remote_debug \
 	$(OBJ)/drivers $(OBJ)/machine $(OBJ)/vidhrdw $(OBJ)/sndhrdw \
 	$(OBJ)/cpu $(OBJ)/sound \
 	$(OBJ)/mess $(OBJ)/mess/cpu $(OBJ)/mess/formats $(OBJ)/mess/systems \
@@ -330,7 +331,7 @@ tools: $(ZLIB) $(OBJDIRS) $(TOOLS)
 objdirs: $(MY_OBJDIRS)
 
 $(MY_OBJDIRS):
-	-mkdir $@
+	-mkdir -p $@
 
 xlistdev: src/unix/contrib/tools/xlistdev.c
 	$(CC_COMMENT) @echo 'Compiling $< ...'
