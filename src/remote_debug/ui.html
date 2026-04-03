@@ -51,7 +51,7 @@
     <header>
         <div><span style="color: #4fc1ff; font-weight: bold; font-size: 1.1rem;">PinMAME Advanced Debug</span><span id="game-title" style="margin-left: 15px; color: #aaaaaa; font-size: 0.9rem;">...</span></div>
         <div><span id="status-mode" class="status-tag">OFFLINE</span>
-            <button class="btn" onclick="control('pause')">Pause</button><button class="btn" onclick="control('resume')">Resume</button><button class="btn" onclick="control('step')">Step</button><button class="btn btn-danger" onclick="emulatorExit()">Exit</button>
+            <button class="btn" onclick="control('pause')">Pause</button><button class="btn" onclick="control('resume')">Resume</button><button class="btn" onclick="control('step')">Step</button><button class="btn btn-success" onclick="control('stepover')">Step Over</button><button class="btn btn-danger" onclick="emulatorExit()">Exit</button>
         </div>
     </header>
     <div class="main-container">
@@ -103,8 +103,17 @@
                 <div id="console-log"></div>
             </div>
             <div class="panel">
-                <h2>Memory Hex Editor</h2>
-                <div class="tool-bar">Addr: <input type="text" id="mem-addr" value="0x0000" style="width: 70px;"> Size: <input type="number" id="mem-size" value="256" style="width: 60px;"> CPU: <input type="number" id="mem-cpu" value="0" style="width: 35px;"> <button class="btn" onclick="refreshMemory()">Read</button></div>
+                <h2>Memory Hex Editor & Search</h2>
+                <div class="tool-bar">
+                    Addr: <input type="text" id="mem-addr" value="0x0000" style="width: 70px;"> 
+                    Size: <input type="number" id="mem-size" value="256" style="width: 60px;"> 
+                    CPU: <input type="number" id="mem-cpu" value="0" style="width: 35px;"> 
+                    <button class="btn" onclick="refreshMemory()">Read</button>
+                </div>
+                <div class="tool-bar" style="background: #2d2d2d; border: 1px dashed #444;">
+                    Search Hex: <input type="text" id="search-pat" placeholder="e.g. 414243" style="flex:1;">
+                    <button class="btn btn-success" onclick="runSearch()">Find</button>
+                </div>
                 <div id="hex-container" style="overflow-x: auto; background: #1e1e1e; max-height: 180px; overflow-y: auto;"><table class="hex-table" id="hex-view"></table></div>
             </div>
         </div>
@@ -117,6 +126,24 @@
         function pulseSw(sw, val) { fetch(`/api/input?sw=${sw}&val=${val}`).then(updateStatus); }
         function nvramClear() { if(confirm("Wipe NVRAM?")) fetch('/api/debugger/nvram?cmd=clear').then(() => updateStatus()); }
         function emulatorExit() { if(confirm("Exit Emulator?")) { fetch('/api/debugger/control?cmd=exit'); document.body.innerHTML = "<h1>Disconnected</h1>"; } }
+        
+        function runSearch() {
+            const addr = document.getElementById('mem-addr').value;
+            const pat = document.getElementById('search-pat').value;
+            const cpu = document.getElementById('mem-cpu').value;
+            if(!pat) return;
+            fetch(`/api/debugger/memory/find?addr=${addr}&size=0x8000&pattern=${pat}&cpu=${cpu}`)
+                .then(r => r.json()).then(data => {
+                    if(data.status === 'ok') {
+                        const found = '0x' + data.found.toString(16).toUpperCase();
+                        document.getElementById('mem-addr').value = found;
+                        document.getElementById('dasm-addr').value = found;
+                        refreshMemory(); refreshDasm();
+                        alert("Pattern found at " + found);
+                    } else { alert("Pattern not found."); }
+                });
+        }
+
         function toggleSwitch(idx, isDedicated) {
             const current = isDedicated ? dedicatedStates[idx] : switchStates[idx]; const newVal = current ? 0 : 1;
             let swNum; if (isDedicated) swNum = idx + 1; else { const col = Math.floor(idx/8); const row = idx%8; if (col === 0) swNum = row + 1; else swNum = col * 10 + row + 1; }

@@ -20,9 +20,6 @@ extern void remote_debug_get_dmd_screenshot(char **buffer, int *len, char *conte
 extern void remote_debug_set_paused(int paused);
 extern void remote_debug_step(void);
 extern int remote_debug_is_paused(void);
-extern void remote_debug_instr_add(UINT32 adr);
-extern void remote_debug_instr_clear(void);
-extern void remote_debug_get_log(char **buffer, int *len);
 extern void remote_debug_lock(void);
 extern void remote_debug_unlock(void);
 extern int wpc_get_bank(void);
@@ -39,6 +36,9 @@ extern void remote_debug_get_points(char **buffer, int *len);
 extern void remote_debug_get_messages(char **buffer, int *len);
 extern void remote_debug_add_message(const char *msg);
 extern void remote_debug_memory_fill(int cpu, UINT32 addr, int size, UINT8 val);
+extern int remote_debug_memory_find(int cpu, UINT32 addr, int size, const UINT8 *pat, int len, UINT32 *found);
+extern void remote_debug_step_over(void);
+extern void remote_debug_run_to(UINT32 addr);
 extern void core_get_dmd_data(int layout_idx, float **pixels, int *width, int *height);
 
 extern unsigned activecpu_dasm(char *buffer, unsigned pc);
@@ -147,8 +147,42 @@ void api_handler(const http_request_t *req, char **resp_body, int *resp_len, cha
         char cmd_buf[256]; get_query_param(req->path, "cmd", cmd_buf, 256);
         if (cmd_buf[0]) handle_classic_command(cmd_buf);
         *resp_body = strdup("{\"status\": \"ok\"}"); *resp_len = 16; strcpy(content_type, "application/json");
+    } else if (strncmp(req->path, "/api/debugger/control", 21) == 0) {
+        char cmd_buf[32]; get_query_param(req->path, "cmd", cmd_buf, 32);
+        if (strcmp(cmd_buf, "pause") == 0) remote_debug_set_paused(1);
+        else if (strcmp(cmd_buf, "resume") == 0) remote_debug_set_paused(0);
+        else if (strcmp(cmd_buf, "step") == 0) remote_debug_step();
+        else if (strcmp(cmd_buf, "exit") == 0) remote_debug_quit();
+        else if (strcmp(cmd_buf, "stepover") == 0) remote_debug_step_over();
+        *resp_body = strdup("{\"status\": \"ok\"}"); *resp_len = 16; strcpy(content_type, "application/json");
     } else if (strncmp(req->path, "/api/debugger/messages", 21) == 0) {
         strcpy(content_type, "application/json"); remote_debug_get_messages(resp_body, resp_len);
+    } else if (strncmp(req->path, "/api/debugger/memory/find", 25) == 0) {
+        char addr_buf[32], size_buf[32], pat_buf[256], cpu_buf[32];
+        get_query_param(req->path, "addr", addr_buf, 32); get_query_param(req->path, "size", size_buf, 32);
+        get_query_param(req->path, "pattern", pat_buf, 256); get_query_param(req->path, "cpu", cpu_buf, 32);
+        UINT32 addr = parse_addr(addr_buf); int size = size_buf[0] ? (int)parse_addr(size_buf) : 0x2000;
+        int cpu = cpu_buf[0] ? atoi(cpu_buf) : 0;
+        UINT8 pattern[128]; int pat_len = 0;
+        for (int i = 0; i < (int)strlen(pat_buf) && pat_len < 128; i += 2) {
+            char hex[3] = { pat_buf[i], pat_buf[i+1], 0 };
+            pattern[pat_len++] = (UINT8)strtoul(hex, NULL, 16);
+        }
+        UINT32 found = 0;
+        if (remote_debug_memory_find(cpu, addr, size, pattern, pat_len, &found)) {
+            char res[64]; int len = sprintf(res, "{\"status\": \"ok\", \"found\": %u}", found);
+            *resp_body = strdup(res); *resp_len = len;
+        } else { *resp_body = strdup("{\"status\": \"not_found\"}"); *resp_len = 23; }
+        strcpy(content_type, "application/json");
+    } else if (strncmp(req->path, "/api/debugger/memory/fill", 25) == 0) {
+        char addr_buf[32], size_buf[32], val_buf[32], cpu_buf[32];
+        get_query_param(req->path, "addr", addr_buf, 32); get_query_param(req->path, "size", size_buf, 32);
+        get_query_param(req->path, "val", val_buf, 32); get_query_param(req->path, "cpu", cpu_buf, 32);
+        remote_debug_memory_fill(atoi(cpu_buf), parse_addr(addr_buf), (int)parse_addr(size_buf), (UINT8)parse_addr(val_buf));
+        *resp_body = strdup("{\"status\": \"ok\"}"); *resp_len = 16; strcpy(content_type, "application/json");
+    } else if (strncmp(req->path, "/api/debugger/control/runto", 26) == 0) {
+        char addr_buf[32]; get_query_param(req->path, "addr", addr_buf, 32);
+        remote_debug_run_to(parse_addr(addr_buf)); *resp_body = strdup("{\"status\": \"ok\"}"); *resp_len = 16; strcpy(content_type, "application/json");
     } else if (strncmp(req->path, "/api/debugger/points", 20) == 0) {
         char cmd_buf[32], type_buf[32], idx_buf[32];
         get_query_param(req->path, "cmd", cmd_buf, 32); get_query_param(req->path, "type", type_buf, 32); get_query_param(req->path, "idx", idx_buf, 32);
@@ -187,14 +221,9 @@ void api_handler(const http_request_t *req, char **resp_body, int *resp_len, cha
         strcpy(content_type, "application/octet-stream");
         remote_debug_lock();
         if (Machine && Machine->drv && Machine->drv->nvram_handler) {
-            /* We need a temporary buffer. NVRAM is usually small (8KB-32KB) */
-            void *buf = malloc(0x10000); 
-            /* Calling nvram_handler with a file pointer is standard, but we'll mock it or access memory directly */
-            /* For WPC, NVRAM is usually just the CMOS RAM area */
             extern UINT8 *wpc_ram;
-            if (wpc_ram) {
-                *resp_body = malloc(0x2000); memcpy(*resp_body, wpc_ram, 0x2000); *resp_len = 0x2000;
-            } else { *resp_body = strdup("No WPC RAM"); *resp_len = 10; }
+            if (wpc_ram) { *resp_body = malloc(0x2000); memcpy(*resp_body, wpc_ram, 0x2000); *resp_len = 0x2000; }
+            else { *resp_body = strdup("No WPC RAM"); *resp_len = 10; }
         }
         remote_debug_unlock();
     } else if (strncmp(req->path, "/api/debugger/nvram", 20) == 0) {
@@ -215,7 +244,7 @@ void api_handler(const http_request_t *req, char **resp_body, int *resp_len, cha
             if (Machine && cpu_idx < cpu_gettotalcpu()) { cpunum_write_byte(cpu_idx, addr, val); *resp_body = strdup("{\"status\": \"ok\"}"); *resp_len = 16; }
             else { *resp_body = strdup("{\"status\": \"error\"}"); *resp_len = 19; }
             remote_debug_unlock();
-        } else { *resp_body = strdup("{\"status\": \"error\"}"); *resp_len = 19; }
+        } else { *resp_body = strdup("{\"status\": \"error\", \"message\": \"missing params\"}"); *resp_len = 46; }
         strcpy(content_type, "application/json");
     } else if (strncmp(req->path, "/api/debugger/state", 19) == 0) {
         strcpy(content_type, "application/json"); char *buf = malloc(8192); char *ptr = buf; ptr += sprintf(ptr, "{\"cpus\": [");
@@ -241,24 +270,6 @@ void api_handler(const http_request_t *req, char **resp_body, int *resp_len, cha
         if (Machine && cpu_idx < cpu_gettotalcpu()) { for (int i = 0; i < size; i++) { if (i > 0) ptr += sprintf(ptr, ","); ptr += sprintf(ptr, "%u", (unsigned int)cpunum_read_byte(cpu_idx, addr + i)); } }
         remote_debug_unlock();
         ptr += sprintf(ptr, "]}"); *resp_body = buf; *resp_len = ptr - buf;
-    } else if (strncmp(req->path, "/api/debugger/log", 17) == 0) {
-        strcpy(content_type, "application/json"); remote_debug_get_log(resp_body, resp_len);
-    } else if (strncmp(req->path, "/api/screenshot", 15) == 0) {
-        remote_debug_get_screenshot(resp_body, resp_len, content_type);
-    } else if (strncmp(req->path, "/api/dmd/info", 13) == 0) {
-        strcpy(content_type, "application/json"); float *px; int w, h; remote_debug_lock(); core_get_dmd_data(0, &px, &w, &h); remote_debug_unlock();
-        char buffer[128]; int len = sprintf(buffer, "{\"width\": %d, \"height\": %d}", w, h); *resp_body = strdup(buffer); *resp_len = len;
-    } else if (strncmp(req->path, "/api/dmd", 8) == 0) {
-        remote_debug_get_dmd_screenshot(resp_body, resp_len, content_type);
-    } else if (strncmp(req->path, "/api/debugger/control", 21) == 0) {
-        char cmd_buf[32]; get_query_param(req->path, "cmd", cmd_buf, 32);
-        if (cmd_buf[0]) {
-            if (strcmp(cmd_buf, "pause") == 0) remote_debug_set_paused(1);
-            else if (strcmp(cmd_buf, "resume") == 0) remote_debug_set_paused(0);
-            else if (strcmp(cmd_buf, "step") == 0) remote_debug_step();
-            else if (strcmp(cmd_buf, "exit") == 0) remote_debug_quit();
-        }
-        *resp_body = strdup("{\"status\": \"ok\"}"); *resp_len = 16; strcpy(content_type, "application/json");
     } else if (strncmp(req->path, "/api/input", 10) == 0) {
         char sw_buf[32], val_buf[32];
         get_query_param(req->path, "sw", sw_buf, 32); get_query_param(req->path, "val", val_buf, 32);
@@ -282,8 +293,11 @@ void api_handler(const http_request_t *req, char **resp_body, int *resp_len, cha
     } else if (strncmp(req->path, "/api/doc", 8) == 0) {
         strcpy(content_type, "text/plain");
         const char *doc = "PinMAME Remote Debugger API\n===========================\n\n"
-            "GET /api/debugger/command?cmd=C\n"
-            "GET /api/info (Includes Matrices)\n";
+            "GET /api/debugger/command?cmd=C (MAME Syntax)\n"
+            "GET /api/debugger/memory/find?addr=A&size=S&pattern=HEX\n"
+            "GET /api/debugger/memory/fill?addr=A&size=S&val=V\n"
+            "GET /api/debugger/control/stepover\n"
+            "GET /api/debugger/control/runto?addr=A\n";
         *resp_body = strdup(doc); *resp_len = strlen(doc);
     } else { *resp_body = strdup("{\"error\": \"not_found\"}"); *resp_len = 22; strcpy(content_type, "application/json"); }
 }

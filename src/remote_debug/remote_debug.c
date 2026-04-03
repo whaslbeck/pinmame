@@ -18,7 +18,7 @@ static pthread_mutex_t mame_mutex;
 int remote_debug_ready = 0;
 
 /* --- Points --- */
-typedef struct { UINT32 adr; int enabled; } breakpoint_t;
+typedef struct { UINT32 adr; int enabled; int temp; } breakpoint_t;
 static breakpoint_t breakpoints[128];
 static int breakpoint_count = 0;
 
@@ -76,9 +76,19 @@ void remote_debug_quit(void) { printf("Remote Debugger: Quit\n"); should_quit = 
 int remote_debug_should_quit(void) { return should_quit; }
 
 /* Point Management */
-void remote_debug_breakpoint_add(UINT32 adr) {
-    remote_debug_lock(); if (breakpoint_count < 128) { breakpoints[breakpoint_count].adr = adr; breakpoints[breakpoint_count].enabled = 1; breakpoint_count++; char b[128]; sprintf(b, "BP added at %04X", adr); remote_debug_add_message(b); } remote_debug_unlock();
+void remote_debug_breakpoint_add_internal(UINT32 adr, int temp) {
+    remote_debug_lock();
+    if (breakpoint_count < 128) {
+        breakpoints[breakpoint_count].adr = adr;
+        breakpoints[breakpoint_count].enabled = 1;
+        breakpoints[breakpoint_count].temp = temp;
+        breakpoint_count++;
+        if (!temp) { char b[128]; sprintf(b, "BP added at %04X", adr); remote_debug_add_message(b); }
+    }
+    remote_debug_unlock();
 }
+
+void remote_debug_breakpoint_add(UINT32 adr) { remote_debug_breakpoint_add_internal(adr, 0); }
 void remote_debug_breakpoint_clear(void) { remote_debug_lock(); breakpoint_count = 0; remote_debug_add_message("Breakpoints cleared"); remote_debug_unlock(); }
 void remote_debug_breakpoint_toggle(int index) { remote_debug_lock(); if (index>=0 && index<breakpoint_count) breakpoints[index].enabled = !breakpoints[index].enabled; remote_debug_unlock(); }
 void remote_debug_breakpoint_delete(int index) { remote_debug_lock(); if (index>=0 && index<breakpoint_count) { for(int i=index; i<breakpoint_count-1; i++) breakpoints[i]=breakpoints[i+1]; breakpoint_count--; } remote_debug_unlock(); }
@@ -90,6 +100,40 @@ void remote_debug_watchpoint_clear(void) { remote_debug_lock(); watchpoint_count
 void remote_debug_watchpoint_toggle(int index) { remote_debug_lock(); if (index>=0 && index<watchpoint_count) watchpoints[index].enabled = !watchpoints[index].enabled; remote_debug_unlock(); }
 void remote_debug_watchpoint_delete(int index) { remote_debug_lock(); if (index>=0 && index<watchpoint_count) { for(int i=index; i<watchpoint_count-1; i++) watchpoints[i]=watchpoints[i+1]; watchpoint_count--; } remote_debug_unlock(); }
 
+void remote_debug_get_points(char **buffer, int *len) {
+    remote_debug_lock();
+    *buffer = malloc(8192);
+    char *p = *buffer;
+    p += sprintf(p, "{\"breakpoints\": [");
+    for (int i = 0; i < breakpoint_count; i++) {
+        if (i > 0) p += sprintf(p, ",");
+        p += sprintf(p, "{\"idx\": %d, \"addr\": %u, \"enabled\": %d}", i, breakpoints[i].adr, breakpoints[i].enabled);
+    }
+    p += sprintf(p, "], \"watchpoints\": [");
+    for (int i = 0; i < watchpoint_count; i++) {
+        if (i > 0) p += sprintf(p, ",");
+        p += sprintf(p, "{\"idx\": %d, \"addr\": %u, \"mode\": %d, \"enabled\": %d}", i, watchpoints[i].adr, watchpoints[i].mode, watchpoints[i].enabled);
+    }
+    p += sprintf(p, "]}");
+    *len = p - *buffer;
+    remote_debug_unlock();
+}
+
+void remote_debug_get_messages(char **buffer, int *len) {
+    remote_debug_lock();
+    *buffer = malloc(msg_count * 140 + 128);
+    char *p = *buffer;
+    p += sprintf(p, "{\"messages\": [");
+    for (int i = 0; i < msg_count; i++) {
+        int idx = (msg_head - msg_count + i + MSG_QUEUE_SIZE) % MSG_QUEUE_SIZE;
+        if (i > 0) p += sprintf(p, ",");
+        p += sprintf(p, "\"%s\"", msg_queue[idx]);
+    }
+    p += sprintf(p, "]}");
+    *len = p - *buffer;
+    remote_debug_unlock();
+}
+
 void remote_debug_breakpoint_hook(void) {
     UINT32 pc = activecpu_get_reg(REG_PC);
     for (int i = 0; i < breakpoint_count; i++) {
@@ -98,7 +142,13 @@ void remote_debug_breakpoint_hook(void) {
             activecpu_abort_timeslice();
             int bank = wpc_get_bank();
             char b[128]; sprintf(b, "Halt: BP at %04X (Bank: %02X)", pc, bank);
-            remote_debug_lock(); remote_debug_add_message(b); remote_debug_unlock();
+            remote_debug_lock();
+            remote_debug_add_message(b);
+            if (breakpoints[i].temp) {
+                for(int j=i; j<breakpoint_count-1; j++) breakpoints[j]=breakpoints[j+1];
+                breakpoint_count--; i--;
+            }
+            remote_debug_unlock();
             printf("Remote Debugger: %s\n", b);
             break;
         }
@@ -111,10 +161,8 @@ void remote_debug_memref(UINT32 adr, int length, int write) {
         if (watchpoints[i].enabled && adr >= watchpoints[i].adr && adr < watchpoints[i].adr + length) {
             int hit = 0; if (watchpoints[i].mode == 3) hit = 1; else if (watchpoints[i].mode == 1 && !write) hit = 1; else if (watchpoints[i].mode == 2 && write) hit = 1;
             if (hit) {
-                is_paused = 1;
-                activecpu_abort_timeslice();
-                UINT32 pc = activecpu_get_reg(REG_PC);
-                int bank = wpc_get_bank();
+                is_paused = 1; activecpu_abort_timeslice();
+                UINT32 pc = activecpu_get_reg(REG_PC); int bank = wpc_get_bank();
                 char b[128]; sprintf(b, "Halt: WP %s at %04X (PC=%04X, Bank=%02X)", write?"Write":"Read", adr, pc, bank);
                 remote_debug_lock(); remote_debug_add_message(b); remote_debug_unlock();
                 printf("Remote Debugger: %s\n", b);
@@ -129,21 +177,58 @@ void remote_debug_memref(UINT32 adr, int length, int write) {
 }
 
 void remote_debug_memory_fill(int cpu_idx, UINT32 addr, int size, UINT8 val) {
-    remote_debug_lock(); if (Machine && cpu_idx < cpu_gettotalcpu()) { for (int i = 0; i < size; i++) cpunum_write_byte(cpu_idx, addr + i, val); } remote_debug_unlock();
+    remote_debug_lock();
+    if (Machine && cpu_idx < cpu_gettotalcpu()) {
+        for (int i = 0; i < size; i++) cpunum_write_byte(cpu_idx, addr + i, val);
+        char b[128]; sprintf(b, "Memory Fill: %04X-%04X with %02X", addr, addr+size-1, val);
+        remote_debug_add_message(b);
+    }
+    remote_debug_unlock();
 }
 
-void remote_debug_get_messages(char **buffer, int *len) {
-    remote_debug_lock(); *buffer = malloc(msg_count * 140 + 128); char *p = *buffer; p += sprintf(p, "{\"messages\": [");
-    for (int i = 0; i < msg_count; i++) { int idx = (msg_head - msg_count + i + MSG_QUEUE_SIZE) % MSG_QUEUE_SIZE; if (i > 0) p += sprintf(p, ","); p += sprintf(p, "\"%s\"", msg_queue[idx]); }
-    p += sprintf(p, "]}"); *len = p - *buffer; remote_debug_unlock();
+int remote_debug_memory_find(int cpu_idx, UINT32 addr, int size, const UINT8 *pattern, int pat_len, UINT32 *found_addr) {
+    int result = 0;
+    remote_debug_lock();
+    if (Machine && cpu_idx < cpu_gettotalcpu()) {
+        for (UINT32 a = addr; a <= addr + size - pat_len; a++) {
+            int match = 1;
+            for (int i = 0; i < pat_len; i++) {
+                if (cpunum_read_byte(cpu_idx, a + i) != pattern[i]) { match = 0; break; }
+            }
+            if (match) { *found_addr = a; result = 1; break; }
+        }
+    }
+    remote_debug_unlock();
+    return result;
 }
 
-void remote_debug_get_points(char **buffer, int *len) {
-    remote_debug_lock(); *buffer = malloc(8192); char *p = *buffer; p += sprintf(p, "{\"breakpoints\": [");
-    for (int i = 0; i < breakpoint_count; i++) { if (i > 0) p += sprintf(p, ","); p += sprintf(p, "{\"idx\": %d, \"addr\": %u, \"enabled\": %d}", i, breakpoints[i].adr, breakpoints[i].enabled); }
-    p += sprintf(p, "], \"watchpoints\": [");
-    for (int i = 0; i < watchpoint_count; i++) { if (i > 0) p += sprintf(p, ","); p += sprintf(p, "{\"idx\": %d, \"addr\": %u, \"mode\": %d, \"enabled\": %d}", i, watchpoints[i].adr, watchpoints[i].mode, watchpoints[i].enabled); }
-    p += sprintf(p, "]}"); *len = p - *buffer; remote_debug_unlock();
+/* Advanced Execution */
+void remote_debug_step_over(void) {
+    remote_debug_lock();
+    int cpu = cpu_getactivecpu();
+    if (cpu >= 0) {
+        UINT32 pc = activecpu_get_reg(REG_PC);
+        char dasm[64];
+        activecpu_set_op_base(pc);
+        int size = activecpu_dasm(dasm, pc);
+        if (size > 0) {
+            remote_debug_breakpoint_add_internal(pc + size, 1);
+            is_paused = 0;
+            remote_debug_add_message("Stepping over...");
+        } else {
+            remote_debug_step();
+        }
+    }
+    remote_debug_unlock();
+}
+
+void remote_debug_run_to(UINT32 addr) {
+    remote_debug_lock();
+    remote_debug_breakpoint_add_internal(addr, 1);
+    is_paused = 0;
+    char b[128]; sprintf(b, "Running to %04X...", addr);
+    remote_debug_add_message(b);
+    remote_debug_unlock();
 }
 
 void remote_debug_get_log(char **buffer, int *len) {

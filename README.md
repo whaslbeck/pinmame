@@ -182,11 +182,28 @@ Start PinMAME in headless mode with the debugger active:
 - `-startpaused`: Halts the CPU at the first instruction.
 - `-httpport <port>`: Sets the API/UI port (default: 8935).
 
+### Advanced Features
+- **Memory Search**: High-speed hex pattern matching via the UI or `GET /api/debugger/memory/find`.
+- **Cabinet & Service Panel**: Interactive buttons for COIN, START, and Service functions (+, -, ESC, ENT) with real-time feedback.
+- **Immediate Execution Halt**: Breakpoints and watchpoints now trigger an instant CPU abort for precise instruction-level debugging.
+- **WPC Matrix Visualizer**: Live 8x8 grids for Lamps and Switches, plus 32-bit Solenoid tracking.
+
+### Verification
+A comprehensive test suite is included to verify all API and core debugger features. To run the tests:
+```bash
+cd src/remote_debug
+./test_suite.sh
+```
+
+Other available tools in `src/remote_debug/`:
+- `find_nvram_coins.sh`: Automates NVRAM diffing to find credit storage locations.
+- `test_breakpoint.sh`: Simple script to verify instruction-level halting.
+
+
 ### HTTP API & UI
 - **Dashboard**: `http://localhost:8935/ui`
 - **API Documentation**: `http://localhost:8935/api/doc`
-- **Example API Calls**:
-  - `GET /api/info`: Get game status and hardware matrices.
-  - `GET /api/debugger/command?cmd=bp 0x8CC1`: Set a breakpoint.
-  - `GET /api/debugger/memory?addr=0x0000&size=256`: Read memory.
-  - `GET /api/dmd`: Get raw grayscale DMD frames.
+- **New Endpoints**:
+  - `GET /api/debugger/memory/find?addr=A&pattern=HEX`: Search RAM for patterns.
+  - `GET /api/debugger/nvram/dump`: Binary download of the WPC CMOS RAM.
+  - `GET /api/debugger/control?cmd=stepover`: Skip subroutines during execution.

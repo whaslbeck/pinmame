@@ -1,9 +1,22 @@
-.project
-build/
-/CMakeLists.txt
-/.vs/
-/obj/
-/release/
-xpinmamed.x11
-xpinmamed.obj/
+# PinMAME Build Artifacts
+xpinmame
+xpinmame.*
+xpinmamed.*
+*.obj/
+*.cbj/
+*.a
+*.o
+
+# Debugger Logs & Temp Files
 *.txt
+*.log
+*.bin
+*.ppm
+suite_log.txt
+test_log.txt
+log.txt
+
+# OS/Editor Files
+.DS_Store
+.vscode/
+.idea/
