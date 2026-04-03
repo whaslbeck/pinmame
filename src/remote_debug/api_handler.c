@@ -136,10 +136,11 @@ void api_handler(const http_request_t *req, char **resp_body, int *resp_len, cha
             int bank = wpc_get_bank();
             char lamp_hex[CORE_MAXLAMPCOL * 2 + 1]; for (int i = 0; i < CORE_MAXLAMPCOL; i++) sprintf(lamp_hex + i*2, "%02X", coreGlobals.lampMatrix[i]);
             char sw_hex[CORE_MAXSWCOL * 2 + 1]; for (int i = 0; i < CORE_MAXSWCOL; i++) sprintf(sw_hex + i*2, "%02X", coreGlobals.swMatrix[i]);
+            char seg_hex[CORE_SEGCOUNT * 4 + 1]; for (int i = 0; i < CORE_SEGCOUNT; i++) sprintf(seg_hex + i*4, "%04X", coreGlobals.segments[i].w);
             int ded = (wpc_data) ? wpc_data[0] : 0;
-            int len = sprintf(buffer, "{\"game\": \"%s\", \"description\": \"%s\", \"manufacturer\": \"%s\", \"year\": \"%s\", \"paused\": %d, \"wpc_bank\": %d, \"lamps\": \"%s\", \"switches\": \"%s\", \"dedicated\": %d, \"solenoids\": %u, \"solenoids2\": %u}",
+            int len = sprintf(buffer, "{\"game\": \"%s\", \"description\": \"%s\", \"manufacturer\": \"%s\", \"year\": \"%s\", \"paused\": %d, \"wpc_bank\": %d, \"lamps\": \"%s\", \"switches\": \"%s\", \"segments\": \"%s\", \"dedicated\": %d, \"solenoids\": %u, \"solenoids2\": %u}",
                               Machine->gamedrv->name, Machine->gamedrv->description, Machine->gamedrv->manufacturer, Machine->gamedrv->year,
-                              remote_debug_is_paused(), bank, lamp_hex, sw_hex, ded, coreGlobals.solenoids, coreGlobals.solenoids2);
+                              remote_debug_is_paused(), bank, lamp_hex, sw_hex, seg_hex, ded, coreGlobals.solenoids, coreGlobals.solenoids2);
             *resp_body = buffer; *resp_len = len;
         } else { *resp_body = strdup("{\"status\": \"initializing\"}"); *resp_len = 27; }
         remote_debug_unlock();

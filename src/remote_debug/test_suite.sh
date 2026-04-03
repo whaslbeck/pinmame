@@ -22,6 +22,7 @@ echo "1. Verifying Info & WPC Banking..."
 INFO=$(curl -s "http://localhost:$PORT/api/info")
 assert_contains "$INFO" "taf_l7" "Game Name"
 assert_contains "$INFO" '"wpc_bank":' "WPC Bank Field"
+assert_contains "$INFO" '"segments":' "Alphanumeric Segments Field"
 
 echo "2. Setting Breakpoint & Resuming..."
 curl -s "http://localhost:$PORT/api/debugger/command?cmd=bp%200x8CC1" > /dev/null

@@ -43,6 +43,8 @@ info on using MAME related functions.
 All standard MAME "functions" do work the same way in PinMAME (profiler, debugger, cheats,
 record/playback, command line switches etc.).
 
+This fork includes an **Advanced Remote Debugger** module, providing a thread-safe REST API and a high-fidelity web dashboard for headless or remote analysis. Features include real-time DMD/Alphanumeric rendering, hardware breakpoints, memory pattern search, and interactive matrix visualization. See [src/remote_debug/README.md](src/remote_debug/README.md) for full documentation and API reference.
+
 In addition, there is special compile time support for the [P-ROC](http://www.pinballcontrollers.com),
 to drive (at least) real WPC machines with PinMAME/P-ROC, [PPUC](https://github.com/PPUC) and LISY
 (Linux for Gottlieb System1 & System80, Bally, Atari, Williams and 'HOme' Pinballs, to drive real pinball machines via

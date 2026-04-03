@@ -7,6 +7,9 @@ xpinmamed.*
 *.a
 *.o
 
+# Release Files
+release/roms/*zip
+
 # Debugger Logs & Temp Files
 *.txt
 *.log
