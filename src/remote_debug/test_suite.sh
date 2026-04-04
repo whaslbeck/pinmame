@@ -64,6 +64,10 @@ curl -s "http://localhost:$PORT/api/input?sw=13&val=1" > /dev/null
 INFO_SW=$(curl -s "http://localhost:$PORT/api/info")
 assert_contains "$INFO_SW" "taf_l7" "Input API Connectivity"
 
+echo "8. Verifying Callstack API..."
+STACK=$(curl -s "http://localhost:$PORT/api/debugger/callstack")
+assert_contains "$STACK" '"stack":' "Callstack API Format"
+
 echo "=================================================="
 echo "ALL TESTS PASSED"
 echo "=================================================="

@@ -25,6 +25,7 @@ extern void remote_debug_unlock(void);
 extern int wpc_get_bank(void);
 extern void remote_debug_quit(void);
 extern void remote_debug_breakpoint_add(UINT32 adr);
+extern void remote_debug_breakpoint_add_banked(UINT32 adr, int bank);
 extern void remote_debug_breakpoint_clear(void);
 extern void remote_debug_breakpoint_toggle(int index);
 extern void remote_debug_breakpoint_delete(int index);
@@ -34,6 +35,7 @@ extern void remote_debug_watchpoint_toggle(int index);
 extern void remote_debug_watchpoint_delete(int index);
 extern void remote_debug_get_points(char **buffer, int *len);
 extern void remote_debug_get_messages(char **buffer, int *len);
+extern void remote_debug_get_callstack(char **buffer, int *len);
 extern void remote_debug_add_message(const char *msg);
 extern void remote_debug_memory_fill(int cpu, UINT32 addr, int size, UINT8 val);
 extern int remote_debug_memory_find(int cpu, UINT32 addr, int size, const UINT8 *pat, int len, UINT32 *found);
@@ -96,7 +98,15 @@ static void handle_classic_command(const char* cmd_line_encoded) {
     char *p = clean; while(*p) { *p = toupper(*p); p++; }
     char *cmd = strtok(clean, " ,"); if (!cmd) return;
     if (strcmp(cmd, "BP") == 0) {
-        char *as = strtok(NULL, " ,"); if (as) remote_debug_breakpoint_add(parse_addr(as));
+        char *as = strtok(NULL, " ,"); 
+        if (as) {
+            char *colon = strchr(as, ':');
+            if (colon) {
+                *colon = 0; remote_debug_breakpoint_add_banked(parse_addr(colon + 1), (int)parse_addr(as));
+            } else {
+                remote_debug_breakpoint_add(parse_addr(as));
+            }
+        }
     } else if (strcmp(cmd, "BC") == 0) {
         remote_debug_breakpoint_clear();
     } else if (strcmp(cmd, "WP") == 0) {
@@ -117,7 +127,7 @@ static void handle_classic_command(const char* cmd_line_encoded) {
     } else if (strcmp(cmd, "QUIT") == 0) {
         remote_debug_quit();
     } else if (strcmp(cmd, "HELP") == 0) {
-        remote_debug_add_message("Commands: BP [addr], BC, WP [addr],[len],[type], WC, G, S, F [addr],[len],[val], QUIT");
+        remote_debug_add_message("Commands: BP [bank]:[addr], BC, WP [addr],[len],[type], WC, G, S, F [addr],[len],[val], QUIT");
     } else {
         char err[128]; sprintf(err, "Unknown command: %s", cmd); remote_debug_add_message(err);
     }
@@ -188,9 +198,15 @@ void api_handler(const http_request_t *req, char **resp_body, int *resp_len, cha
         *resp_body = strdup("{\"status\": \"ok\"}"); *resp_len = 16; strcpy(content_type, "application/json");
     } else if (strncmp(req->path, "/api/debugger/messages", 21) == 0) {
         strcpy(content_type, "application/json"); remote_debug_get_messages(resp_body, resp_len);
+    } else if (strncmp(req->path, "/api/debugger/callstack", 23) == 0) {
+        strcpy(content_type, "application/json"); remote_debug_get_callstack(resp_body, resp_len);
     } else if (strncmp(req->path, "/api/debugger/breakpoints", 25) == 0) {
-        char cmd_buf[32], addr_buf[32]; get_query_param(req->path, "cmd", cmd_buf, 32); get_query_param(req->path, "addr", addr_buf, 32);
-        if (strcmp(cmd_buf, "add") == 0) remote_debug_breakpoint_add(parse_addr(addr_buf));
+        char cmd_buf[32], addr_buf[32], bank_buf[32]; 
+        get_query_param(req->path, "cmd", cmd_buf, 32); get_query_param(req->path, "addr", addr_buf, 32); get_query_param(req->path, "bank", bank_buf, 32);
+        if (strcmp(cmd_buf, "add") == 0) {
+            if (bank_buf[0]) remote_debug_breakpoint_add_banked(parse_addr(addr_buf), atoi(bank_buf));
+            else remote_debug_breakpoint_add(parse_addr(addr_buf));
+        }
         else if (strcmp(cmd_buf, "clear") == 0) remote_debug_breakpoint_clear();
         *resp_body = strdup("{\"status\": \"ok\"}"); *resp_len = 16; strcpy(content_type, "application/json");
     } else if (strncmp(req->path, "/api/debugger/watchpoints", 24) == 0) {
@@ -236,20 +252,30 @@ void api_handler(const http_request_t *req, char **resp_body, int *resp_len, cha
         remote_debug_memory_fill(atoi(cpu_buf), parse_addr(addr_buf), (int)parse_addr(size_buf), (UINT8)parse_addr(val_buf));
         *resp_body = strdup("{\"status\": \"ok\"}"); *resp_len = 16; strcpy(content_type, "application/json");
     } else if (strncmp(req->path, "/api/debugger/dasm", 18) == 0) {
-        char addr_buf[32], lines_buf[32], cpu_buf[32];
-        get_query_param(req->path, "addr", addr_buf, 32); get_query_param(req->path, "lines", lines_buf, 32); get_query_param(req->path, "cpu", cpu_buf, 32);
+        char addr_buf[32], lines_buf[32], cpu_buf[32], bank_buf[32];
+        get_query_param(req->path, "addr", addr_buf, 32); get_query_param(req->path, "lines", lines_buf, 32); 
+        get_query_param(req->path, "cpu", cpu_buf, 32); get_query_param(req->path, "bank", bank_buf, 32);
         UINT32 addr = parse_addr(addr_buf); int lines = lines_buf[0] ? atoi(lines_buf) : 10; int cpu_idx = cpu_buf[0] ? atoi(cpu_buf) : 0;
+        int bank = bank_buf[0] ? atoi(bank_buf) : -1;
         if (lines > 100) lines = 100;
         strcpy(content_type, "application/json"); char *buf = malloc(lines * 128 + 256); char *ptr = buf;
-        ptr += sprintf(ptr, "{\"cpu\": %d, \"lines\": [", cpu_idx);
+        ptr += sprintf(ptr, "{\"cpu\": %d, \"bank\": %d, \"lines\": [", cpu_idx, bank);
         remote_debug_lock();
         if (Machine && cpu_idx < cpu_gettotalcpu()) {
             cpuintrf_push_context(cpu_idx);
+            int old_bank = -1;
+            if (bank != -1 && Machine->drv->cpu[cpu_idx].cpu_type == CPU_M6809) {
+                old_bank = wpc_get_bank();
+                cpu_setbank(1, memory_region(WPC_ROMREGION) + bank * 0x4000);
+            }
             for (int i = 0; i < lines; i++) {
                 char dasm_buf[64]; activecpu_set_op_base(addr); unsigned size = activecpu_dasm(dasm_buf, addr); if (size == 0) size = 1;
                 if (i > 0) ptr += sprintf(ptr, ",");
                 ptr += sprintf(ptr, "{\"addr\": %u, \"size\": %u, \"text\": \"%s\"}", addr, size, dasm_buf);
                 addr += size;
+            }
+            if (old_bank != -1) {
+                cpu_setbank(1, memory_region(WPC_ROMREGION) + old_bank * 0x4000);
             }
             cpuintrf_pop_context();
         }

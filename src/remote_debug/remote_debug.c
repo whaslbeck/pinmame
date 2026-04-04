@@ -18,7 +18,7 @@ static pthread_mutex_t mame_mutex;
 int remote_debug_ready = 0;
 
 /* --- Points --- */
-typedef struct { UINT32 adr; int enabled; int temp; } breakpoint_t;
+typedef struct { UINT32 adr; int bank; int enabled; int temp; } breakpoint_t;
 static breakpoint_t breakpoints[128];
 static int breakpoint_count = 0;
 
@@ -76,19 +76,27 @@ void remote_debug_quit(void) { printf("Remote Debugger: Quit\n"); should_quit = 
 int remote_debug_should_quit(void) { return should_quit; }
 
 /* Point Management */
-void remote_debug_breakpoint_add_internal(UINT32 adr, int temp) {
+void remote_debug_breakpoint_add_internal(UINT32 adr, int bank, int temp) {
     remote_debug_lock();
     if (breakpoint_count < 128) {
         breakpoints[breakpoint_count].adr = adr;
+        breakpoints[breakpoint_count].bank = bank;
         breakpoints[breakpoint_count].enabled = 1;
         breakpoints[breakpoint_count].temp = temp;
         breakpoint_count++;
-        if (!temp) { char b[128]; sprintf(b, "BP added at %04X", adr); remote_debug_add_message(b); }
+        if (!temp) { 
+            char b[128]; 
+            if (bank != -1) sprintf(b, "BP added at %02X:%04X", bank, adr);
+            else sprintf(b, "BP added at %04X", adr);
+            remote_debug_add_message(b); 
+        }
     }
     remote_debug_unlock();
 }
 
-void remote_debug_breakpoint_add(UINT32 adr) { remote_debug_breakpoint_add_internal(adr, 0); }
+void remote_debug_breakpoint_add(UINT32 adr) { remote_debug_breakpoint_add_internal(adr, -1, 0); }
+void remote_debug_breakpoint_add_banked(UINT32 adr, int bank) { remote_debug_breakpoint_add_internal(adr, bank, 0); }
+
 void remote_debug_breakpoint_clear(void) { remote_debug_lock(); breakpoint_count = 0; remote_debug_add_message("Breakpoints cleared"); remote_debug_unlock(); }
 void remote_debug_breakpoint_toggle(int index) { remote_debug_lock(); if (index>=0 && index<breakpoint_count) breakpoints[index].enabled = !breakpoints[index].enabled; remote_debug_unlock(); }
 void remote_debug_breakpoint_delete(int index) { remote_debug_lock(); if (index>=0 && index<breakpoint_count) { for(int i=index; i<breakpoint_count-1; i++) breakpoints[i]=breakpoints[i+1]; breakpoint_count--; } remote_debug_unlock(); }
@@ -107,7 +115,7 @@ void remote_debug_get_points(char **buffer, int *len) {
     p += sprintf(p, "{\"breakpoints\": [");
     for (int i = 0; i < breakpoint_count; i++) {
         if (i > 0) p += sprintf(p, ",");
-        p += sprintf(p, "{\"idx\": %d, \"addr\": %u, \"enabled\": %d}", i, breakpoints[i].adr, breakpoints[i].enabled);
+        p += sprintf(p, "{\"idx\": %d, \"addr\": %u, \"bank\": %d, \"enabled\": %d}", i, breakpoints[i].adr, breakpoints[i].bank, breakpoints[i].enabled);
     }
     p += sprintf(p, "], \"watchpoints\": [");
     for (int i = 0; i < watchpoint_count; i++) {
@@ -136,12 +144,18 @@ void remote_debug_get_messages(char **buffer, int *len) {
 
 void remote_debug_breakpoint_hook(void) {
     UINT32 pc = activecpu_get_reg(REG_PC);
+    int current_bank = wpc_get_bank();
     for (int i = 0; i < breakpoint_count; i++) {
         if (breakpoints[i].enabled && pc == breakpoints[i].adr) {
+            /* Check bank if specified */
+            if (breakpoints[i].bank != -1 && current_bank != breakpoints[i].bank) continue;
+
             is_paused = 1;
             activecpu_abort_timeslice();
-            int bank = wpc_get_bank();
-            char b[128]; sprintf(b, "Halt: BP at %04X (Bank: %02X)", pc, bank);
+            char b[128]; 
+            if (current_bank != -1) sprintf(b, "Halt: BP at %02X:%04X", current_bank, pc);
+            else sprintf(b, "Halt: BP at %04X", pc);
+            
             remote_debug_lock();
             remote_debug_add_message(b);
             if (breakpoints[i].temp) {
@@ -212,7 +226,7 @@ void remote_debug_step_over(void) {
         activecpu_set_op_base(pc);
         int size = activecpu_dasm(dasm, pc);
         if (size > 0) {
-            remote_debug_breakpoint_add_internal(pc + size, 1);
+            remote_debug_breakpoint_add_internal(pc + size, -1, 1);
             is_paused = 0;
             remote_debug_add_message("Stepping over...");
         } else {
@@ -224,10 +238,44 @@ void remote_debug_step_over(void) {
 
 void remote_debug_run_to(UINT32 addr) {
     remote_debug_lock();
-    remote_debug_breakpoint_add_internal(addr, 1);
+    remote_debug_breakpoint_add_internal(addr, -1, 1);
     is_paused = 0;
     char b[128]; sprintf(b, "Running to %04X...", addr);
     remote_debug_add_message(b);
+    remote_debug_unlock();
+}
+
+/* Callstack */
+void remote_debug_get_callstack(char **buffer, int *len) {
+    remote_debug_lock();
+    *buffer = malloc(4096); char *p = *buffer;
+    p += sprintf(p, "{\"stack\": [");
+    int cpu = cpu_getactivecpu();
+    if (cpu >= 0 && Machine->drv->cpu[cpu].cpu_type == CPU_M6809) {
+        UINT16 sp = cpunum_get_reg(cpu, REG_SP);
+        int count = 0;
+        for (int i = 0; i < 64 && count < 10; i++) {
+            /* M6809 pushes 16-bit return addresses on JSR/BSR */
+            UINT16 val = (cpunum_read_byte(cpu, sp + i) << 8) | cpunum_read_byte(cpu, sp + i + 1);
+            /* Heuristic: Check if previous byte at val was a JSR/BSR/LBSR */
+            /* JSR: $AD, $BD, $BD... BSR: $8D, LBSR: $17 */
+            int found = 0;
+            if (val > 0x0100) {
+                UINT8 op = cpunum_read_byte(cpu, val - 3);
+                if (op == 0xBD || op == 0xAD || op == 0x17) found = 1;
+                else {
+                    op = cpunum_read_byte(cpu, val - 2);
+                    if (op == 0x8D || op == 0xAD) found = 1;
+                }
+            }
+            if (found) {
+                if (count > 0) p += sprintf(p, ",");
+                p += sprintf(p, "%u", val);
+                count++; i++; /* Skip next byte as we consumed a word */
+            }
+        }
+    }
+    p += sprintf(p, "]}"); *len = p - *buffer;
     remote_debug_unlock();
 }
 
