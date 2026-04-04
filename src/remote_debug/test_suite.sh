@@ -15,38 +15,54 @@ PID=$!
 sleep 5
 
 function assert_contains() {
-    if [[ "$1" == *"$2"* ]]; then echo "  [PASS] $3"; else echo "  [FAIL] $3 (Expected '$2')"; kill -9 $PID 2>/dev/null; exit 1; fi
+    if [[ "$1" == *"$2"* ]]; then echo "  [PASS] $3"; else echo "  [FAIL] $3 (Expected '$2')"; echo "  Body: $1"; kill -9 $PID 2>/dev/null; exit 1; fi
 }
 
-echo "1. Verifying Info & WPC Banking..."
+echo "1. Verifying Info & Core Connectivity..."
 INFO=$(curl -s "http://localhost:$PORT/api/info")
 assert_contains "$INFO" "taf_l7" "Game Name"
 assert_contains "$INFO" '"wpc_bank":' "WPC Bank Field"
 assert_contains "$INFO" '"segments":' "Alphanumeric Segments Field"
 
-echo "2. Setting Breakpoint & Resuming..."
-curl -s "http://localhost:$PORT/api/debugger/command?cmd=bp%200x8CC1" > /dev/null
+echo "2. Verifying UI Endpoint (Embedded)..."
+UI=$(curl -s "http://localhost:$PORT/ui")
+assert_contains "$UI" "<title>PinMAME Advanced Debugger</title>" "Web UI Loader"
+
+echo "3. Verifying Screenshot API Consistency..."
+S_INFO=$(curl -s "http://localhost:$PORT/api/screenshot/info")
+assert_contains "$S_INFO" '"width":' "Screenshot Info"
+S_RAW_SIZE=$(curl -s "http://localhost:$PORT/api/screenshot/raw" | wc -c)
+if [ $S_RAW_SIZE -gt 1000 ]; then echo "  [PASS] Screenshot Raw Data ($S_RAW_SIZE bytes)"; else echo "  [FAIL] Screenshot Raw too small"; kill -9 $PID 2>/dev/null; exit 1; fi
+S_PNM_HEAD=$(curl -s "http://localhost:$PORT/api/screenshot/pnm" | head -n 1)
+assert_contains "$S_PNM_HEAD" "P6" "Screenshot PNM Header"
+
+echo "4. Setting Breakpoint & Resuming..."
+curl -s "http://localhost:$PORT/api/debugger/breakpoints?cmd=add&addr=0x8CC1" > /dev/null
 curl -s "http://localhost:$PORT/api/debugger/control?cmd=resume" > /dev/null
 echo "  Waiting for hit and init (10s)..."
 sleep 10
 
-echo "3. Verifying DMD API (Post-Init)..."
+echo "5. Verifying DMD API Consistency (Post-Init)..."
 DMD_INFO=$(curl -s "http://localhost:$PORT/api/dmd/info")
 if [[ "$DMD_INFO" == *'"width":128'* ]]; then
-    echo "  [PASS] DMD Width"
+    echo "  [PASS] DMD Info"
+    DMD_RAW_SIZE=$(curl -s "http://localhost:$PORT/api/dmd/raw" | wc -c)
+    if [ $DMD_RAW_SIZE -eq 4096 ]; then echo "  [PASS] DMD Raw Data (4096 bytes)"; else echo "  [FAIL] DMD Raw Size ($DMD_RAW_SIZE)"; kill -9 $PID 2>/dev/null; exit 1; fi
+    DMD_PNM_HEAD=$(curl -s "http://localhost:$PORT/api/dmd/pnm" | head -n 1)
+    assert_contains "$DMD_PNM_HEAD" "P5" "DMD PNM Header"
 else
-    echo "  [INFO] DMD not yet initialized (skipped)"
+    echo "  [INFO] DMD not yet initialized by game (skipped consistency check)"
 fi
 
-echo "4. Verifying Memory Operations..."
-curl -s "http://localhost:$PORT/api/debugger/memory/fill?addr=0x0100&size=16&val=0xAA" > /dev/null
-FIND=$(curl -s "http://localhost:$PORT/api/debugger/memory/find?addr=0x0000&pattern=AAAAAAAA" | tr -d ' ')
+echo "6. Verifying Memory Operations..."
+curl -s "http://localhost:$PORT/api/debugger/memory/fill?addr=0x0100&size=16&val=0xAA&cpu=0" > /dev/null
+FIND=$(curl -s "http://localhost:$PORT/api/debugger/memory/find?addr=0x0000&pattern=AAAAAAAA&cpu=0" | tr -d ' ')
 assert_contains "$FIND" '"found":256' "Memory Fill & Find"
 
-echo "5. Verifying Cabinet Inputs..."
+echo "7. Verifying Cabinet Inputs..."
 curl -s "http://localhost:$PORT/api/input?sw=13&val=1" > /dev/null
 INFO_SW=$(curl -s "http://localhost:$PORT/api/info")
-assert_contains "$INFO_SW" "taf_l7" "API responsive"
+assert_contains "$INFO_SW" "taf_l7" "Input API Connectivity"
 
 echo "=================================================="
 echo "ALL TESTS PASSED"

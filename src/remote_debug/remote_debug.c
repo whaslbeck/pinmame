@@ -249,13 +249,67 @@ void write_ppm_to_buffer(struct mame_bitmap *bitmap, char **buffer, int *len) {
     for (int y = 0; y < height; y++) { for (int x = 0; x < width; x++) { UINT32 c; if (bitmap->depth == 32) { c = ((UINT32 **)bitmap->line)[y][x]; *p++ = (c >> 16) & 0xFF; *p++ = (c >> 8) & 0xFF; *p++ = c & 0xFF; } else if (bitmap->depth == 16) { c = ((UINT16 **)bitmap->line)[y][x]; rgb_t r = last_display->game_palette[c]; *p++ = (r >> 16) & 0xFF; *p++ = (r >> 8) & 0xFF; *p++ = r & 0xFF; } else if (bitmap->depth == 8) { c = ((UINT8 **)bitmap->line)[y][x]; rgb_t r = last_display->game_palette[c]; *p++ = (r >> 16) & 0xFF; *p++ = (r >> 8) & 0xFF; *p++ = r & 0xFF; } } }
     *len = p - *buffer;
 }
-void remote_debug_get_screenshot(char **buffer, int *len, char *content_type) {
-    remote_debug_lock(); if (last_display && last_display->game_bitmap) { write_ppm_to_buffer(last_display->game_bitmap, buffer, len); strcpy(content_type, "image/x-portable-pixmap"); } else { *buffer = strdup("{\"error\":\"No display\"}"); *len = 22; strcpy(content_type, "application/json"); } remote_debug_unlock();
+void remote_debug_get_screenshot_info(int *w, int *h) {
+    remote_debug_lock();
+    if (last_display && last_display->game_bitmap) { *w = last_display->game_bitmap->width; *h = last_display->game_bitmap->height; }
+    else { *w = 0; *h = 0; }
+    remote_debug_unlock();
 }
+
+void remote_debug_get_raw_screenshot(char **buffer, int *len) {
+    remote_debug_lock();
+    if (last_display && last_display->game_bitmap) {
+        struct mame_bitmap *bm = last_display->game_bitmap;
+        int width = bm->width; int height = bm->height;
+        *len = width * height * 3; *buffer = malloc(*len);
+        char *p = *buffer;
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                UINT32 c;
+                if (bm->depth == 32) { c = ((UINT32 **)bm->line)[y][x]; *p++ = (c >> 16) & 0xFF; *p++ = (c >> 8) & 0xFF; *p++ = c & 0xFF; }
+                else if (bm->depth == 16) { c = ((UINT16 **)bm->line)[y][x]; rgb_t r = last_display->game_palette[c]; *p++ = (r >> 16) & 0xFF; *p++ = (r >> 8) & 0xFF; *p++ = r & 0xFF; }
+                else if (bm->depth == 8) { c = ((UINT8 **)bm->line)[y][x]; rgb_t r = last_display->game_palette[c]; *p++ = (r >> 16) & 0xFF; *p++ = (r >> 8) & 0xFF; *p++ = r & 0xFF; }
+            }
+        }
+    } else { *buffer = NULL; *len = 0; }
+    remote_debug_unlock();
+}
+
+void remote_debug_get_screenshot(char **buffer, int *len, char *content_type) {
+    remote_debug_lock();
+    if (last_display && last_display->game_bitmap) {
+        int w, h; w = last_display->game_bitmap->width; h = last_display->game_bitmap->height;
+        char *raw; int raw_len; remote_debug_get_raw_screenshot(&raw, &raw_len);
+        if (raw) {
+            char head[64]; int hlen = sprintf(head, "P6\n%d %d\n255\n", w, h);
+            *len = raw_len + hlen; *buffer = malloc(*len);
+            memcpy(*buffer, head, hlen); memcpy(*buffer + hlen, raw, raw_len);
+            free(raw); strcpy(content_type, "image/x-portable-pixmap");
+        } else { *buffer = strdup("{\"error\":\"No display\"}"); *len = 22; strcpy(content_type, "application/json"); }
+    } else { *buffer = strdup("{\"error\":\"No display\"}"); *len = 22; strcpy(content_type, "application/json"); }
+    remote_debug_unlock();
+}
+
 extern void core_get_dmd_data(int layout_idx, float **pixels, int *width, int *height);
 void remote_debug_get_dmd_screenshot(char **buffer, int *len, char *content_type) {
     float *px; int w, h; remote_debug_lock(); core_get_dmd_data(0, &px, &w, &h);
-    if (px && w > 0 && h > 0) { *len = w * h; *buffer = malloc(*len); UINT8 *p = (UINT8 *)*buffer; for (int i = 0; i < w * h; i++) { float v = px[i]; if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f; *p++ = (UINT8)(v * 255.0f); } strcpy(content_type, "application/octet-stream"); }
-    else { *buffer = strdup("{\"error\":\"No DMD\"}"); *len = 18; strcpy(content_type, "application/json"); } remote_debug_unlock();
+    if (px && w > 0 && h > 0) {
+        *len = w * h; *buffer = malloc(*len); UINT8 *p = (UINT8 *)*buffer;
+        for (int i = 0; i < w * h; i++) { float v = px[i]; if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f; *p++ = (UINT8)(v * 255.0f); }
+        strcpy(content_type, "application/octet-stream");
+    } else { *buffer = strdup("{\"error\":\"No DMD\"}"); *len = 18; strcpy(content_type, "application/json"); }
+    remote_debug_unlock();
+}
+
+void remote_debug_get_dmd_pnm(char **buffer, int *len, char *content_type) {
+    float *px; int w, h; remote_debug_lock(); core_get_dmd_data(0, &px, &w, &h);
+    if (px && w > 0 && h > 0) {
+        char head[64]; int hlen = sprintf(head, "P5\n%d %d\n255\n", w, h);
+        *len = w * h + hlen; *buffer = malloc(*len);
+        memcpy(*buffer, head, hlen); UINT8 *p = (UINT8 *)(*buffer + hlen);
+        for (int i = 0; i < w * h; i++) { float v = px[i]; if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f; *p++ = (UINT8)(v * 255.0f); }
+        strcpy(content_type, "image/x-portable-pixmap");
+    } else { *buffer = strdup("{\"error\":\"No DMD\"}"); *len = 18; strcpy(content_type, "application/json"); }
+    remote_debug_unlock();
 }
 #endif /* REMOTE_DEBUG */

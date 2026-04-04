@@ -18,20 +18,6 @@ A high-performance, thread-safe remote debugging extension for PinMAME with a we
   - Memory Hex Editor with Pattern Search and Block Fill.
   - NVRAM Management (Dump/Clear).
 
-## Williams 16-Segment Mapping
-The Alphanumeric renderer uses the definitive hardware mapping (bits are 0-indexed):
-- **Bits 0-5**: Outer segments (a, b, c, d, e, f)
-- **Bit 6**: Middle-Left horizontal (g1)
-- **Bit 11**: Middle-Right horizontal (g2)
-- **Bit 9**: Center-Top vertical (h)
-- **Bit 13**: Center-Bottom vertical (i)
-- **Bit 8**: Diag Top-Left (j)
-- **Bit 10**: Diag Top-Right (k)
-- **Bit 14**: Diag Bottom-Left (l)
-- **Bit 12**: Diag Bottom-Right (m)
-- **Bit 15**: Decimal Point (Period)
-- **Bit 7**: Comma
-
 ## Setup & Build
 1. Define `REMOTE_DEBUG=1` in your build environment or at the end of `makefile.unix`.
 2. Run PinMAME with the game name: `./xpinmamed.x11 <romname> -headless`.
@@ -39,11 +25,19 @@ The Alphanumeric renderer uses the definitive hardware mapping (bits are 0-index
 
 ## API Reference
 
-### System Info
+### System Info & Captures
 - `GET /api/info`: Returns JSON with game status, lamps, switches, segments, and solenoids.
-- `GET /api/dmd`: Raw binary DMD frame buffer (1 byte per pixel, 0-255 luminance).
-- `GET /api/dmd/info`: JSON with current DMD width and height.
-- `GET /api/screenshot`: Full game window screenshot (PPM format).
+- `GET /ui`: Serves the Web Debugger Dashboard (HTML).
+
+#### DMD Endpoints
+- `GET /api/dmd/info`: JSON with current DMD `width` and `height`.
+- `GET /api/dmd/raw`: Raw binary DMD frame buffer (1 byte per pixel, 0-255 luminance).
+- `GET /api/dmd/pnm`: Grayscale image of the DMD in PPM (P5) format.
+
+#### Screenshot Endpoints
+- `GET /api/screenshot/info`: JSON with current screen `width` and `height`.
+- `GET /api/screenshot/raw`: Raw RGB24 binary buffer (3 bytes per pixel).
+- `GET /api/screenshot/pnm`: Full game window screenshot in PPM (P6) format.
 
 ### Debugger Control
 - `GET /api/debugger/control?cmd=[pause|resume|step|exit|stepover]`: Execution control.
@@ -71,3 +65,21 @@ The Alphanumeric renderer uses the definitive hardware mapping (bits are 0-index
 ### Input
 - `GET /api/input?sw=[INT]&val=[0|1]`: Toggle or pulse a switch (Cabinet or Matrix).
 - `GET /api/debugger/command?cmd=[STRING]`: Execute classic MAME-style debugger commands (URL encoded).
+- `GET /api/doc`: Simple text-based API quick-reference.
+
+## Miscellaneous
+
+### Williams 16-Segment Mapping
+The Alphanumeric renderer uses the definitive hardware mapping (bits are 0-indexed):
+- **Bits 0-5**: Outer segments (a, b, c, d, e, f)
+- **Bit 6**: Middle-Left horizontal (g1)
+- **Bit 11**: Middle-Right horizontal (g2)
+- **Bit 9**: Center-Top vertical (h)
+- **Bit 13**: Center-Bottom vertical (i)
+- **Bit 8**: Diag Top-Left (j)
+- **Bit 10**: Diag Top-Right (k)
+- **Bit 14**: Diag Bottom-Left (l)
+- **Bit 12**: Diag Bottom-Right (m)
+- **Bit 15**: Period (DP)
+- **Bit 7**: Comma
+

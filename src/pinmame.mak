@@ -24,7 +24,7 @@ DRVLIBS += $(OBJ)/machine/4094.o
 DRVLIBS += $(OBJ)/sound/wavwrite.o
 
 ifdef REMOTE_DEBUG
-DRVLIBS += $(OBJ)/remote_debug/remote_debug.o $(OBJ)/remote_debug/http_server.o $(OBJ)/remote_debug/api_handler.o
+DRVLIBS += $(OBJ)/remote_debug/remote_debug.o $(OBJ)/remote_debug/http_server.o $(OBJ)/remote_debug/api_handler.o $(OBJ)/remote_debug/ui_html.o
 endif
 
 COREOBJS += $(PINOBJ)/driver.o $(OBJ)/cheat.o $(PINOBJ)/mech.o

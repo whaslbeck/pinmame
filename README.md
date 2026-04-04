@@ -197,15 +197,5 @@ cd src/remote_debug
 ./test_suite.sh
 ```
 
-Other available tools in `src/remote_debug/`:
-- `find_nvram_coins.sh`: Automates NVRAM diffing to find credit storage locations.
-- `test_breakpoint.sh`: Simple script to verify instruction-level halting.
-
-
-### HTTP API & UI
-- **Dashboard**: `http://localhost:8935/ui`
-- **API Documentation**: `http://localhost:8935/api/doc`
-- **New Endpoints**:
-  - `GET /api/debugger/memory/find?addr=A&pattern=HEX`: Search RAM for patterns.
-  - `GET /api/debugger/nvram/dump`: Binary download of the WPC CMOS RAM.
-  - `GET /api/debugger/control?cmd=stepover`: Skip subroutines during execution.
+### Usage
+See src/remote/debug/README.md
