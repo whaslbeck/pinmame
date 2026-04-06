@@ -315,6 +315,14 @@ ifdef EFENCE
 MY_LIBS += -lefence
 endif
 
+ifdef REMOTE_DEBUG
+src/remote_debug/ui_html.h: src/remote_debug/ui.html
+	$(CC_COMMENT) @echo 'Compiling HTML $< ... $@'
+	xxd -i src/remote_debug/ui.html > src/remote_debug/ui_html.h
+
+$(OBJ)/remote_debug/api_handler.o: src/remote_debug/ui_html.h
+endif
+
 OBJS += $(COREOBJS) $(DRVLIBS) $(OBJ)/unix.$(DISPLAY_METHOD)/osdepend.a
 
 MY_OBJDIRS = $(CORE_OBJDIRS) $(sort $(OBJDIRS))
@@ -489,7 +497,7 @@ copycab:
 	for j in $$i/*; do $(INSTALL_DATA) $$j $(XMAMEROOT)/$$i; done; done
 
 clean: 
-	rm -fr $(OBJ) $(NAME).* xlistdev src/unix/contrib/cutzlib-1.1.4/libz.a src/unix/contrib/cutzlib-1.1.4/*.o $(TOOLS)
+	rm -fr $(OBJ) $(NAME).* xlistdev src/unix/contrib/cutzlib-1.1.4/libz.a src/unix/contrib/cutzlib-1.1.4/*.o $(TOOLS) src/remote_debug/ui_html.h
 #	cd makedep; make clean
 
 clean68k:

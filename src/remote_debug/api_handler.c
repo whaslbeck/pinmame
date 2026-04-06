@@ -1,5 +1,6 @@
 #ifdef REMOTE_DEBUG
 
+#include "api_handler.h"
 #include "remote_debug.h"
 #include "http_server.h"
 #include "driver.h"
@@ -232,48 +233,6 @@ static void set_json_response(const char *json, char **resp_body, int *resp_len,
     strcpy(content_type, "application/json");
 }
 
-static void set_text_response(const char *text, char **resp_body, int *resp_len, const char *ctype)
-{
-    *resp_body = strdup(text);
-    *resp_len = strlen(text);
-    strcpy(content_type, ctype);
-}
-
-typedef void (*api_route_fn)(const http_request_t *, char **, int *, char *);
-
-typedef struct
-{
-    const char *path;
-    api_route_fn handler;
-} api_route_t;
-
-static void handle_api_info(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_dmd_info(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_dmd_raw(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_dmd_pnm(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_screenshot_info(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_screenshot_raw(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_screenshot_pnm(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_screenshot_legacy(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_debugger_command(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_debugger_control_runto(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_debugger_control(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_debugger_messages(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_debugger_callstack(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_debugger_breakpoints(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_debugger_watchpoints(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_debugger_points(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_debugger_memory_find(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_debugger_memory_fill(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_debugger_dasm(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_debugger_nvram_dump(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_debugger_nvram(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_debugger_memory_write(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_debugger_state(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_debugger_memory(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_input(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_ui(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
-static void handle_api_doc(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
 
 static const api_route_t api_routes[] = {
     {"/api/debugger/control/runto", handle_api_debugger_control_runto},
@@ -797,10 +756,11 @@ static void handle_api_input(const http_request_t *req, char **resp_body, int *r
 
 static void handle_ui(const http_request_t *req, char **resp_body, int *resp_len, char *content_type)
 {
-    extern const char *remote_debug_ui_html;
+// ui_html.h is generated from ui.html by the makefile, it contains the HTML content as a C string and its length in bytes
+#include "remote_debug/ui_html.h"
     strcpy(content_type, "text/html");
-    *resp_body = strdup(remote_debug_ui_html);
-    *resp_len = strlen(remote_debug_ui_html);
+    *resp_body = strdup((const char *)src_remote_debug_ui_html);
+    *resp_len = src_remote_debug_ui_html_len;
 }
 
 static void handle_api_doc(const http_request_t *req, char **resp_body, int *resp_len, char *content_type)
