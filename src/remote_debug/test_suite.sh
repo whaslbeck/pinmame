@@ -36,11 +36,14 @@ if [ $S_RAW_SIZE -gt 1000 ]; then echo "  [PASS] Screenshot Raw Data ($S_RAW_SIZ
 S_PNM_HEAD=$(curl -s "http://localhost:$PORT/api/screenshot/pnm" | head -n 1)
 assert_contains "$S_PNM_HEAD" "P6" "Screenshot PNM Header"
 
-echo "4. Setting Breakpoint & Resuming..."
-curl -s "http://localhost:$PORT/api/debugger/breakpoints?cmd=add&addr=0x8CC1" > /dev/null
+echo "4. Resuming Execution..."
 curl -s "http://localhost:$PORT/api/debugger/control?cmd=resume" > /dev/null
-echo "  Waiting for hit and init (10s)..."
+echo "  Waiting for execution (10s)..."
 sleep 10
+echo "  Setting Breakpoint at 0x8CC1..."
+curl -s "http://localhost:$PORT/api/debugger/breakpoints?cmd=add&addr=0x8CC1" > /dev/null
+echo "  Waiting for hit (5s)..."
+sleep 5
 
 echo "5. Verifying DMD API Consistency (Post-Init)..."
 DMD_INFO=$(curl -s "http://localhost:$PORT/api/dmd/info")
@@ -64,9 +67,12 @@ curl -s "http://localhost:$PORT/api/input?sw=13&val=1" > /dev/null
 INFO_SW=$(curl -s "http://localhost:$PORT/api/info")
 assert_contains "$INFO_SW" "taf_l7" "Input API Connectivity"
 
-echo "8. Verifying Callstack API..."
+echo "8. Verifying Enhanced Callstack API..."
 STACK=$(curl -s "http://localhost:$PORT/api/debugger/callstack")
 assert_contains "$STACK" '"stack":' "Callstack API Format"
+assert_contains "$STACK" '"bank":' "Callstack Banking Info"
+assert_contains "$STACK" '"pc":' "Callstack Register Context (PC)"
+assert_contains "$STACK" '"u":' "Callstack Register Context (U)"
 
 echo "=================================================="
 echo "ALL TESTS PASSED"

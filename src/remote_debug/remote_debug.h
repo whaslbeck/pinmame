@@ -14,7 +14,7 @@ void remote_debug_lock(void);
 void remote_debug_unlock(void);
 
 /* Ready flag */
-extern int remote_debug_ready;
+extern volatile int remote_debug_ready;
 
 /* Check if the emulator should quit */
 int remote_debug_should_quit(void);
@@ -30,5 +30,10 @@ void remote_debug_memref(UINT32 adr, int length, int write);
 
 /* Memory operations */
 void remote_debug_memory_fill(int cpu, UINT32 addr, int size, UINT8 val);
+
+/* Callstack tracking */
+void remote_debug_push_call(UINT32 caller, UINT32 receiver);
+void remote_debug_pop_call(void);
+void remote_debug_reset_callstack(void);
 
 #endif /* REMOTE_DEBUG_H */
