@@ -386,6 +386,23 @@ void remote_debug_memory_fill(int cpu_idx, UINT32 addr, int size, UINT8 val)
     remote_debug_unlock();
 }
 
+void remote_debug_set_register(int cpu_idx, int reg, UINT32 val)
+{
+    remote_debug_lock();
+    if (Machine && cpu_idx < cpu_gettotalcpu())
+    {
+        /* Switch context to target CPU to ensure register change is applied */
+        cpuintrf_push_context(cpu_idx);
+        activecpu_set_reg(reg, val);
+        cpuintrf_pop_context();
+
+        char b[128];
+        sprintf(b, "Set Reg: CPU %d, Reg %d to %04X", cpu_idx, reg, val);
+        remote_debug_add_message(b);
+    }
+    remote_debug_unlock();
+}
+
 int remote_debug_memory_find(int cpu_idx, UINT32 addr, int size, const UINT8 *pattern, int pat_len, UINT32 *found_addr)
 {
     int result = 0;

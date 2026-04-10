@@ -39,6 +39,7 @@ extern void remote_debug_get_messages(char **buffer, int *len);
 extern void remote_debug_get_callstack(char **buffer, int *len);
 extern void remote_debug_add_message(const char *msg);
 extern void remote_debug_memory_fill(int cpu, UINT32 addr, int size, UINT8 val);
+extern void remote_debug_set_register(int cpu, int reg, UINT32 val);
 extern int remote_debug_memory_find(int cpu, UINT32 addr, int size, const UINT8 *pat, int len, UINT32 *found);
 extern void remote_debug_step_over(void);
 extern void remote_debug_run_to(UINT32 addr);
@@ -102,13 +103,36 @@ static void get_query_param(const char *path, const char *key, char *dest, int m
     }
 }
 
-static UINT32 parse_addr(const char *s)
+static int resolve_register_id(const char *name)
 {
-    if (!s || !*s)
+    if (name[0] == '\0')
+        return -1;
+
+    /* If it's a number, return it directly */
+    if (isdigit(name[0]))
+        return atoi(name);
+
+    /* Map common register names (M6809 focus) */
+    if (strcasecmp(name, "PC") == 0) return 1;
+    if (strcasecmp(name, "S") == 0 || strcasecmp(name, "SP") == 0) return 2;
+    if (strcasecmp(name, "CC") == 0 || strcasecmp(name, "FLAGS") == 0) return 3;
+    if (strcasecmp(name, "A") == 0) return 4;
+    if (strcasecmp(name, "B") == 0) return 5;
+    if (strcasecmp(name, "U") == 0) return 6;
+    if (strcasecmp(name, "X") == 0) return 7;
+    if (strcasecmp(name, "Y") == 0) return 8;
+    if (strcasecmp(name, "DP") == 0) return 9;
+
+    return -1;
+}
+
+static UINT32 parse_addr(const char *str)
+{
+    if (!str || !*str)
         return 0;
-    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))
-        return strtoul(s + 2, NULL, 16);
-    return strtoul(s, NULL, 16);
+    if (str[0] == '0' && (str[1] == 'x' || str[1] == 'X'))
+        return strtoul(str + 2, NULL, 16);
+    return strtoul(str, NULL, 16);
 }
 
 static void get_cpu_registers(int i, char **p)
@@ -249,6 +273,7 @@ static const api_route_t api_routes[] = {
     {"/api/debugger/nvram", handle_api_debugger_nvram},
     {"/api/debugger/points", handle_api_debugger_points},
     {"/api/debugger/dasm", handle_api_debugger_dasm},
+    {"/api/debugger/state/write", handle_api_debugger_state_write},
     {"/api/debugger/state", handle_api_debugger_state},
     {"/api/debugger/memory", handle_api_debugger_memory},
     {"/api/screenshot/info", handle_api_screenshot_info},
@@ -667,6 +692,37 @@ static void handle_api_debugger_memory_write(const http_request_t *req, char **r
     else
     {
         set_json_response("{\"status\": \"error\", \"message\": \"missing params\"}", resp_body, resp_len, content_type);
+    }
+}
+
+static void handle_api_debugger_state_write(const http_request_t *req, char **resp_body, int *resp_len, char *content_type)
+{
+    char cpu_buf[32], reg_buf[32], val_buf[32];
+    get_query_param(req->path, "reg", reg_buf, 32);
+    get_query_param(req->path, "val", val_buf, 32);
+
+    if (reg_buf[0] != '\0' && val_buf[0] != '\0')
+    {
+        int cpu_idx = 0;
+        get_query_param(req->path, "cpu", cpu_buf, 32);
+        if (cpu_buf[0] != '\0')
+            cpu_idx = atoi(cpu_buf);
+
+        int reg_id = resolve_register_id(reg_buf);
+        if (reg_id != -1)
+        {
+            UINT32 val = (UINT32)parse_addr(val_buf);
+            remote_debug_set_register(cpu_idx, reg_id, val);
+            set_json_response("{\"status\": \"ok\"}", resp_body, resp_len, content_type);
+        }
+        else
+        {
+            set_json_response("{\"status\": \"error\", \"message\": \"invalid register name/id\"}", resp_body, resp_len, content_type);
+        }
+    }
+    else
+    {
+        set_json_response("{\"status\": \"error\", \"message\": \"missing params (reg, val)\"}", resp_body, resp_len, content_type);
     }
 }
 

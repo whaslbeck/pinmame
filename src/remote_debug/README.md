@@ -45,6 +45,7 @@ A high-performance, thread-safe remote debugging extension for PinMAME with a we
 - `GET /api/debugger/control?cmd=[pause|resume|step|exit|stepover]`: Execution control.
 - `GET /api/debugger/control/runto?addr=[HEX]`: Run until PC reaches address.
 - `GET /api/debugger/state`: JSON with registers and flags for all active CPUs.
+- `GET /api/debugger/state/write?cpu=[ID]&reg=[INT|NAME]&val=[HEX]`: Set a CPU register value.
 - `GET /api/debugger/dasm?addr=[HEX]&lines=[INT]&cpu=[ID]&bank=[HEX]`: JSON disassembly. If `bank` is provided, the disassembler temporarily maps that ROM bank.
 - `GET /api/debugger/messages`: JSON list of debugger console messages.
 - `GET /api/debugger/callstack`: Returns a list of callstack objects, each containing `caller`, `receiver`, `bank`, and full register context (`pc`, `u`, `s`, `x`, `y`, `a`, `b`, `dp`, `cc`).
@@ -71,6 +72,20 @@ A high-performance, thread-safe remote debugging extension for PinMAME with a we
 - `GET /api/doc`: Simple text-based API quick-reference.
 
 ## Misc
+
+### CPU Register Mapping (M6809)
+When using the register write API, you can use the following names or their corresponding indices:
+| Index | Name | Description |
+|-------|------|-------------|
+| 1     | PC   | Program Counter |
+| 2     | S    | Stack Pointer (SP) |
+| 3     | CC   | Condition Codes (FLAGS) |
+| 4     | A    | Accumulator A |
+| 5     | B    | Accumulator B |
+| 6     | U    | User Stack Pointer |
+| 7     | X    | Index Register X |
+| 8     | Y    | Index Register Y |
+| 9     | DP   | Direct Page Register |
 
 ### Williams 16-Segment Mapping
 The Alphanumeric renderer uses the definitive hardware mapping (bits are 0-indexed):

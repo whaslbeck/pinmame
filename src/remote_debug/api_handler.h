@@ -33,6 +33,7 @@ static void handle_api_debugger_dasm(const http_request_t *req, char **resp_body
 static void handle_api_debugger_nvram_dump(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
 static void handle_api_debugger_nvram(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
 static void handle_api_debugger_memory_write(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
+static void handle_api_debugger_state_write(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
 static void handle_api_debugger_state(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
 static void handle_api_debugger_memory(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);
 static void handle_api_input(const http_request_t *req, char **resp_body, int *resp_len, char *content_type);

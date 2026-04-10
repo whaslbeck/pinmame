@@ -486,7 +486,14 @@ void m6809_set_reg(int regnum, unsigned val)
 	switch( regnum )
 	{
 		case REG_PC:
-		case M6809_PC: PC = val; CHANGE_PC; break;
+		case M6809_PC:
+			PC = val;
+			CHANGE_PC;
+#ifdef REMOTE_DEBUG
+			/* Wake up CPU from SYNC/CWAI wait states so debugger can force execution from new PC */
+			m6809.int_state &= ~(M6809_CWAI | M6809_SYNC);
+#endif
+			break;
 		case REG_SP:
 		case M6809_S: S = val; break;
 		case M6809_CC: CC = val; CHECK_IRQ_LINES; break;

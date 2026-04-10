@@ -62,17 +62,52 @@ curl -s "http://localhost:$PORT/api/debugger/memory/fill?addr=0x0100&size=16&val
 FIND=$(curl -s "http://localhost:$PORT/api/debugger/memory/find?addr=0x0000&pattern=AAAAAAAA&cpu=0" | tr -d ' ')
 assert_contains "$FIND" '"found":256' "Memory Fill & Find"
 
-echo "7. Verifying Cabinet Inputs..."
+echo "7. Verifying Register Write API..."
+# Pause first to ensure the value doesn't get changed by the game immediately
+curl -s "http://localhost:$PORT/api/debugger/control?cmd=pause" > /dev/null
+# Test 1: Index-based (M6809_B is register 5)
+curl -s "http://localhost:$PORT/api/debugger/state/write?reg=5&val=0x42" > /dev/null
+STATE=$(curl -s "http://localhost:$PORT/api/debugger/state" | tr -d ' ')
+assert_contains "$STATE" '"b":66' "Register Write Index (B=0x42)"
+# Test 2: Name-based (Accumulator A)
+curl -s "http://localhost:$PORT/api/debugger/state/write?reg=A&val=0x13" > /dev/null
+STATE=$(curl -s "http://localhost:$PORT/api/debugger/state" | tr -d ' ')
+assert_contains "$STATE" '"a":19' "Register Write Name (A=0x13)"
+curl -s "http://localhost:$PORT/api/debugger/control?cmd=resume" > /dev/null
+
+echo "8. Verifying Cabinet Inputs..."
 curl -s "http://localhost:$PORT/api/input?sw=13&val=1" > /dev/null
 INFO_SW=$(curl -s "http://localhost:$PORT/api/info")
 assert_contains "$INFO_SW" "taf_l7" "Input API Connectivity"
 
-echo "8. Verifying Enhanced Callstack API..."
+echo "9. Verifying Enhanced Callstack API..."
 STACK=$(curl -s "http://localhost:$PORT/api/debugger/callstack")
 assert_contains "$STACK" '"stack":' "Callstack API Format"
 assert_contains "$STACK" '"bank":' "Callstack Banking Info"
 assert_contains "$STACK" '"pc":' "Callstack Register Context (PC)"
 assert_contains "$STACK" '"u":' "Callstack Register Context (U)"
+
+echo "10. Verifying Live Register Context Execution..."
+# Pause
+curl -s "http://localhost:$PORT/api/debugger/control?cmd=pause" > /dev/null
+# Set PC=FE3C
+curl -s "http://localhost:$PORT/api/debugger/state/write?reg=PC&val=FE3C" > /dev/null
+# Set A=01
+curl -s "http://localhost:$PORT/api/debugger/state/write?reg=A&val=01" > /dev/null
+# Step
+curl -s "http://localhost:$PORT/api/debugger/control?cmd=step" > /dev/null
+# Wait a bit for timeslice to finish
+sleep 1
+# Check PC
+STATE_STEP=$(curl -s "http://localhost:$PORT/api/debugger/state" | tr -d ' ')
+# If PC is still FE3C (65084), it failed. We expect it to have moved (e.g. to FE3F = 65087)
+if [[ "$STATE_STEP" == *'"pc":65084'* ]]; then
+    echo "  [FAIL] Live Register Context: PC stayed at FE3C"
+    kill -9 $PID 2>/dev/null
+    exit 1
+else
+    echo "  [PASS] Live Register Context: PC moved from FE3C"
+fi
 
 echo "=================================================="
 echo "ALL TESTS PASSED"

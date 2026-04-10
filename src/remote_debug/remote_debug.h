@@ -31,6 +31,9 @@ void remote_debug_memref(UINT32 adr, int length, int write);
 /* Memory operations */
 void remote_debug_memory_fill(int cpu, UINT32 addr, int size, UINT8 val);
 
+/* Register access */
+void remote_debug_set_register(int cpu, int reg, UINT32 val);
+
 /* Callstack tracking */
 void remote_debug_push_call(UINT32 caller, UINT32 receiver);
 void remote_debug_pop_call(void);
